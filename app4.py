@@ -81,75 +81,91 @@ if total_budget > 0:
 st.divider()
 
 # -----------------------------
-# 2) Spending simulation (Phase 3)
+# 2) Spending input (Manual or Simulation)
 # -----------------------------
-st.header("2) Spending simulation (Phase 3)")
+st.header("2) Spending input")
 
-st.write(
-    "Instead of manually typing expenses, this prototype simulates spending behavior up to a given day of the month. "
-    "In a real product, this would come from transaction data."
-)
+manual_mode = st.checkbox("Manual mode: enter current spending yourself")
 
-colS1, colS2, colS3 = st.columns([1, 1, 1])
-with colS1:
-    day = st.slider("Day of month", 1, 30, 15)
-with colS2:
-    style = st.selectbox("Spending style", ["Cautious", "Typical", "Impulsive"], index=1)
-with colS3:
-    resimulate = st.button("Re-simulate spending")
+if manual_mode:
 
-# Control randomness so user can click "Re-simulate"
-if "sim_seed" not in st.session_state:
-    st.session_state.sim_seed = 123
+    st.write(
+        "Enter how much you have spent so far in each category."
+    )
 
-if resimulate:
-    st.session_state.sim_seed += 1
+    spending = []
+    for i, row in budgets_df.iterrows():
+        spent = st.number_input(
+            f"Current spent in {row['category']} (€)",
+            min_value=0.0,
+            value=0.0,
+            step=10.0,
+            key=f"manual_spent_{i}",
+        )
+        spending.append(float(spent))
 
-np.random.seed(st.session_state.sim_seed)
+else:
 
-# Style parameters (simple, explainable)
-# mean_multiplier controls how fast you spend vs plan
-# noise_multiplier controls variability
-style_params = {
-    "Cautious": {"mean_multiplier": 0.70, "noise_multiplier": 0.08},
-    "Typical": {"mean_multiplier": 0.85, "noise_multiplier": 0.10},
-    "Impulsive": {"mean_multiplier": 1.00, "noise_multiplier": 0.14},
-}
-mean_mult = style_params[style]["mean_multiplier"]
-noise_mult = style_params[style]["noise_multiplier"]
+    st.write(
+        "Simulate your spending behavior up to a given day of the month. "
+        "In a real product, this would come from transaction data."
+    )
 
-spent_list = []
-for _, r in budgets_df.iterrows():
-    monthly_budget = float(r["budget"])
+    colS1, colS2, colS3 = st.columns([1, 1, 1])
+    with colS1:
+        day = st.slider("Day of month", 1, 30, 15)
+    with colS2:
+        style = st.selectbox("Spending style", ["Cautious", "Typical", "Impulsive"], index=1)
+    with colS3:
+        resimulate = st.button("Re-simulate spending")
 
-    # expected spending by this day (rough, but prototyping-friendly)
-    expected_spent = monthly_budget * mean_mult * (day / 30)
+    if "sim_seed" not in st.session_state:
+        st.session_state.sim_seed = 123
 
-    # add variability scaled by budget
-    simulated_spent = np.random.normal(loc=expected_spent, scale=monthly_budget * noise_mult)
+    if resimulate:
+        st.session_state.sim_seed += 1
 
-    # no negative spending
-    simulated_spent = max(0.0, simulated_spent)
+    np.random.seed(st.session_state.sim_seed)
 
-    spent_list.append(float(simulated_spent))
+    style_params = {
+        "Cautious": {"mean_multiplier": 0.70, "noise_multiplier": 0.08},
+        "Typical": {"mean_multiplier": 0.85, "noise_multiplier": 0.10},
+        "Impulsive": {"mean_multiplier": 1.00, "noise_multiplier": 0.14},
+    }
 
-budgets_df["spent_so_far"] = spent_list
+    mean_mult = style_params[style]["mean_multiplier"]
+    noise_mult = style_params[style]["noise_multiplier"]
+
+    spending = []
+
+    for _, r in budgets_df.iterrows():
+        monthly_budget = float(r["budget"])
+
+        expected_spent = monthly_budget * mean_mult * (day / 30)
+
+        simulated_spent = np.random.normal(
+            loc=expected_spent,
+            scale=monthly_budget * noise_mult
+        )
+
+        simulated_spent = max(0.0, simulated_spent)
+        spending.append(float(simulated_spent))
+
+
+# ---- Common logic (used by both manual and simulation) ----
+budgets_df["spent_so_far"] = spending
 budgets_df["remaining"] = budgets_df["budget"] - budgets_df["spent_so_far"]
 budgets_df["overspend_now"] = budgets_df["spent_so_far"] - budgets_df["budget"]
 
 total_spent = float(budgets_df["spent_so_far"].sum())
 
-st.subheader("Simulated spending snapshot")
+st.subheader("Spending snapshot")
 st.dataframe(
     budgets_df[["category", "priority", "budget", "spent_so_far", "remaining"]],
     use_container_width=True
 )
 
-c1, c2 = st.columns(2)
-c1.metric("Total spent so far (€)", f"{total_spent:,.0f}")
-c2.metric("Day of month", f"{day}")
-
-st.divider()
+st.metric("Total spent so far (€)", f"{total_spent:,.0f}")
 
 # -----------------------------
 # 3) Risk detection (simple projection)
